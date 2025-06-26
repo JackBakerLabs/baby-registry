@@ -50,6 +50,7 @@ def init_db():
         ''', gifts)
         conn.commit()
         conn.close()
+init_db()
 
 @app.route('/')
 def index():
