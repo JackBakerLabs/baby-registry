@@ -69,17 +69,14 @@
   <div class="container py-4">
     <img src="{{ url_for('static', filename='header.jpg') }}" alt="Header" class="header-image" style="width: 50%; height: auto; align-items: center;">
 
-
     {% if session.get('name') %}
       <div class="text-center mb-4">
-        <h4 class="mb-4 fw-bold" style="font-size: 3.8rem; color: var(--header-color);">Hello {{ session.name }}!</h4>
+        <h4 class="mb-4 fw-bold" style="font-size: 3.8rem; color: var(--header-color);">Hello {{ session.get('name') }}!</h4>
         <a href="{{ url_for('logout') }}" class="btn btn-accent mt-2">Logout</a>
       </div>
     {% else %}
       <div class="mb-4">
-        <h4 class="mb-4 fw-bold" style="font-size: 2.8rem; color: var(--header-color);">
-            Who are you?
-          </h4>
+        <h4 class="mb-4 fw-bold" style="font-size: 2.8rem; color: var(--header-color);">Who are you?</h4>
         <form action="{{ url_for('set_name') }}" method="post">
           <div class="mb-3">
             <label for="name" class="form-label">Enter Name</label>
@@ -103,22 +100,28 @@
         {% for gift in gifts %}
         <div class="col-md-4 mb-4">
           <div class="card h-100 p-3">
-            <h5 class="card-title">{{ gift[1] }}</h5>
-            <p class="card-text">{{ gift[2] }}</p>
-            <p><strong>Remaining:</strong> {{ gift[3] if gift[3] >= 0 else 'Unlimited' }}</p>
+            <h5 class="card-title">{{ gift.name }}</h5>
+            <p class="card-text">{{ gift.description }}</p>
+            <p><strong>Remaining:</strong>
+              {% if gift.remaining_quantity >= 0 %}
+                {{ gift.remaining_quantity }}
+              {% else %}
+                Unlimited
+              {% endif %}
+            </p>
 
-            {% if gift[3] > 0 or gift[3] < 0 %}
-              <a href="{{ url_for('register', gift_id=gift[0]) }}" class="btn btn-primary btn-sm me-2">Register</a>
+            {% if gift.remaining_quantity > 0 or gift.remaining_quantity < 0 %}
+              <a href="{{ url_for('register', gift_id=gift.id) }}" class="btn btn-primary btn-sm me-2">Register</a>
             {% else %}
               <button class="btn btn-secondary btn-sm" disabled>Fully Registered</button>
             {% endif %}
 
-            {% if gift[3] < gift[4] %}
-              <a href="{{ url_for('unregister', gift_id=gift[0]) }}" class="btn btn-danger btn-sm mt-1">Unregister</a>
+            {% if gift.remaining_quantity < gift.max_quantity %}
+              <a href="{{ url_for('unregister', gift_id=gift.id) }}" class="btn btn-danger btn-sm mt-1">Unregister</a>
             {% endif %}
 
-            {% if gift[5] %}
-              <p class="mt-2 small"><strong>Registered by:</strong> {{ gift[5].replace(',', ', ') }}</p>
+            {% if gift.persons != 'NaN' %}
+              <p class="mt-2 small"><strong>Registered by:</strong> {{ gift.persons.replace(',', ', ').replace('NaN,', '') }}</p>
             {% endif %}
           </div>
         </div>

@@ -1,21 +1,40 @@
-from flask import Flask, render_template, redirect, url_for, flash, request, session
-import sqlite3
 import os
 import pandas as pd
+from flask import Flask, render_template, redirect, url_for, flash, request, session
+from flask_sqlalchemy import SQLAlchemy
 
-# Load the Excel file
-csv_file = 'gifts.csv'
-gifts_df = pd.read_csv(csv_file)
-
-
-# Convert the DataFrame to a list of tuples
+# --- load your CSV seed data ---
+gifts_df = pd.read_csv('gifts.csv')
+if 'persons' in gifts_df.columns:
+    gifts_df['persons'] = gifts_df['persons'].fillna('')
 gifts = gifts_df.values.tolist()
 
-
+# --- Flask + SQLAlchemy setup ---
 app = Flask(__name__)
-app.secret_key = 'supersecretkey'  # Needed for flash messages
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'supersecretkey')
 
-DB_NAME = 'gifts.db'
+# pull everything straight from the environment
+PG_HOST     = os.environ['PG_HOST']
+PG_PORT     = os.environ.get('PG_PORT', '5432')
+PG_DB       = os.environ['PG_DATABASE']
+PG_USER     = os.environ['PG_USERNAME']
+PG_PASSWORD = os.environ['PG_PASSWORD']
+
+# construct the full URI, forcing SSL
+app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://registry_ni9u_user:IshazfFwVkQ2pIOUWDCv2q42z0jy0zQ1@dpg-d1m4cdvdiees738oms8g-a.oregon-postgres.render.com/registry_ni9u"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+
+
+class Gift(db.Model):
+    __tablename__ = 'gifts'
+    id                 = db.Column(db.Integer, primary_key=True)
+    name               = db.Column(db.String, nullable=False)
+    description        = db.Column(db.String)
+    remaining_quantity = db.Column(db.Integer, nullable=False)
+    max_quantity       = db.Column(db.Integer, nullable=False)
+    persons            = db.Column(db.Text, default='')
 
 message_map = {
     gifts[0][0]: "Maybe he's born with it... Maybe it's baby cream.",
@@ -31,41 +50,30 @@ message_map = {
 }
 
 
-
 def init_db():
-    if not os.path.exists(DB_NAME):
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute('''
-    CREATE TABLE gifts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        remaining_quantity INTEGER NOT NULL,
-        max_quantity INTEGER NOT NULL,
-        persons TEXT DEFAULT ''
-    )
-    ''')
-        cursor.executemany('''
-            INSERT INTO gifts (name, description, remaining_quantity, max_quantity, persons)
-            VALUES (?, ?, ?, ?, ?)
-        ''', gifts)
-        conn.commit()
-        conn.close()
-init_db()
+    db.create_all()
+    if Gift.query.count() == 0:
+        for name, desc, rem, mx, persons in gifts:
+            g = Gift(
+                name=name,
+                description=desc,
+                remaining_quantity=int(rem),
+                max_quantity=int(mx),
+                persons='X'
+            )
+            db.session.add(g)
+        db.session.commit()
 
+
+# --- your routes (unchanged) ---
 @app.route('/')
 def index():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, description, remaining_quantity, max_quantity, persons FROM gifts")
-    gifts = cursor.fetchall()
-    conn.close()
+    gifts = Gift.query.all()
     return render_template('index.html', gifts=gifts)
 
 @app.route('/set_name', methods=['POST'])
 def set_name():
-    session['name'] = request.form.get('name')
+    session['name'] = request.form['name']
     flash(f"Hello, {session['name']}! You are now registered.", "info")
     return redirect(url_for('index'))
 
@@ -74,41 +82,31 @@ def logout():
     session.pop('name', None)
     flash("You have been logged out.", "info")
     return redirect(url_for('index'))
+
 @app.route('/register/<int:gift_id>')
 def register(gift_id):
     if 'name' not in session:
         flash("Please enter your name before registering.", "warning")
         return redirect(url_for('index'))
 
-    user_name = session['name']
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT name, remaining_quantity, persons FROM gifts WHERE id = ?", (gift_id,))
-    gift = cursor.fetchone()
-
-    if gift:
-        name, quantity, persons = gift
-        registered_names = persons.split(",") if persons else []
-
-        if user_name in registered_names:
-            flash(f"You have already registered for '{name}'.", "info")
-        elif quantity > 0 or quantity < 0:
-            if quantity >= 0:
-                cursor.execute("UPDATE gifts SET remaining_quantity = remaining_quantity - 1 WHERE id = ?", (gift_id,))
-            registered_names.append(user_name)
-            updated_persons = ",".join(registered_names)
-            cursor.execute("UPDATE gifts SET persons = ? WHERE id = ?", (updated_persons, gift_id))
-            conn.commit()
-            flash(f"{message_map.get(name, 'Registered successfully!')}", "success")
-        else:
-            flash(f"'{name}' is no longer available.", "danger")
-    else:
+    user = session['name']
+    gift = Gift.query.get(gift_id)
+    if not gift:
         flash("Gift not found.", "warning")
+    else:
+        attendees = gift.persons.split(',') if gift.persons else []
+        if user in attendees:
+            flash(f"You have already registered for '{gift.name}'.", "info")
+        elif gift.remaining_quantity > 0:
+            gift.remaining_quantity -= 1
+            attendees.append(user)
+            gift.persons = ','.join(attendees)
+            db.session.commit()
+            flash(message_map.get(gift.name, "Registered successfully!"), "success")
+        else:
+            flash(f"'{gift.name}' is no longer available.", "danger")
 
-    conn.close()
     return redirect(url_for('index'))
-
 
 @app.route('/unregister/<int:gift_id>')
 def unregister(gift_id):
@@ -116,35 +114,26 @@ def unregister(gift_id):
         flash("You must be logged in to unregister.", "warning")
         return redirect(url_for('index'))
 
-    user_name = session['name']
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT name, remaining_quantity, persons FROM gifts WHERE id = ?", (gift_id,))
-    gift = cursor.fetchone()
-
-    if gift:
-        name, quantity, persons = gift
-        registered_names = persons.split(",") if persons else []
-
-        if user_name in registered_names:
-            registered_names.remove(user_name)
-            updated_persons = ",".join(registered_names)
-            if quantity >= 0:
-                cursor.execute("UPDATE gifts SET remaining_quantity = remaining_quantity + 1, persons = ? WHERE id = ?", (updated_persons, gift_id))
-            else:
-                cursor.execute("UPDATE gifts SET persons = ? WHERE id = ?", (updated_persons, gift_id))
-            conn.commit()
-            flash(f"You have unregistered from '{name}'.", "success")
-        else:
-            flash(f"You weren't registered for '{name}'.", "info")
-    else:
+    user = session['name']
+    gift = Gift.query.get(gift_id)
+    if not gift:
         flash("Gift not found.", "warning")
+    else:
+        attendees = gift.persons.split(',') if gift.persons else []
+        if user in attendees:
+            attendees.remove(user)
+            gift.persons = ','.join(attendees)
+            if gift.remaining_quantity < gift.max_quantity:
+                gift.remaining_quantity += 1
+            db.session.commit()
+            flash(f"You have unregistered from '{gift.name}'.", "success")
+        else:
+            flash(f"You weren't registered for '{gift.name}'.", "info")
 
-    conn.close()
     return redirect(url_for('index'))
 
-
 if __name__ == '__main__':
-    init_db()
+    with app.app_context():
+        init_db()
+
     app.run(debug=True)
