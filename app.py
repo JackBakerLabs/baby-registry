@@ -25,7 +25,9 @@ message_map = {
     gifts[4][0]: "Sleep tight baby!",
     gifts[5][0]: "First nappies, of thousands!",
     gifts[6][0]: "For the busy baby on the go",
-    gifts[7][0]: "Suda-creme de la creme"
+    gifts[7][0]: "Suda-creme de la creme",
+    gifts[8][0]: "Making the floor 20% more fun",
+    gifts[9][0]: "The best a baby can get."
 }
 
 
