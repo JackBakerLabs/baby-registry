@@ -2,12 +2,16 @@ import os
 import pandas as pd
 from flask import Flask, render_template, redirect, url_for, flash, request, session
 from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
 
 # --- load your CSV seed data ---
 gifts_df = pd.read_csv('gifts.csv')
 if 'persons' in gifts_df.columns:
     gifts_df['persons'] = gifts_df['persons'].fillna('')
 gifts = gifts_df.values.tolist()
+
+login_df = pd.read_csv('login_data.csv')
+login_data = login_df.values.tolist()
 
 # --- Flask + SQLAlchemy setup ---
 app = Flask(__name__)
@@ -28,6 +32,13 @@ class Gift(db.Model):
     remaining_quantity = db.Column(db.Integer, nullable=False)
     max_quantity       = db.Column(db.Integer, nullable=False)
     persons            = db.Column(db.Text, default='')
+
+
+class Login(db.Model):
+    __tablename__ = 'login_data'
+    id             = db.Column(db.Integer, primary_key=True)
+    username       = db.Column(db.String, nullable=False)
+    login_time     = db.Column(db.DateTime, nullable=False)
 
 message_map = {
     gifts[0][0]: "Maybe he's born with it... Maybe it's baby cream.",
@@ -57,6 +68,14 @@ def init_db():
             db.session.add(g)
         db.session.commit()
 
+    if Login.query.count() == 0:
+        for username, login_time in login_data:
+            l = Login(
+                username=username,
+                login_time=login_time
+            )
+            db.session.add(l)
+        db.session.commit()
 
 # --- your routes (unchanged) ---
 @app.route('/')
@@ -67,6 +86,12 @@ def index():
 @app.route('/set_name', methods=['POST'])
 def set_name():
     session['name'] = request.form['name']
+    login = Login(
+        username=session['name'],
+        login_time=datetime.now()
+    )
+    db.session.add(login)
+    db.session.commit()
     flash(f"Hello, {session['name']}! You are now registered.", "info")
     return redirect(url_for('index'))
 
