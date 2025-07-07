@@ -13,14 +13,7 @@ gifts = gifts_df.values.tolist()
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'supersecretkey')
 
-# pull everything straight from the environment
-PG_HOST     = os.environ['PG_HOST']
-PG_PORT     = os.environ.get('PG_PORT', '5432')
-PG_DB       = os.environ['PG_DATABASE']
-PG_USER     = os.environ['PG_USERNAME']
-PG_PASSWORD = os.environ['PG_PASSWORD']
 
-# construct the full URI, forcing SSL
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://registry_ni9u_user:IshazfFwVkQ2pIOUWDCv2q42z0jy0zQ1@dpg-d1m4cdvdiees738oms8g-a.oregon-postgres.render.com/registry_ni9u"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
